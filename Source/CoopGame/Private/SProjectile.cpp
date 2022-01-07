@@ -9,7 +9,6 @@
 #include "Components/StaticMeshComponent.h"
 #include "DrawDebugHelpers.h"
 
-
 // Sets default values
 ASProjectile::ASProjectile()
 {

@@ -8,6 +8,7 @@
 
 class UCameraComponent;
 class USpringArmComponent;
+class USHealthComponent;
 class ASWeapon;
 
 UCLASS()
@@ -22,6 +23,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	USpringArmComponent* SpringArmComp;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	USHealthComponent* HealthComp;
 
 	bool bWantsToZoom;
 
@@ -41,6 +45,9 @@ protected:
 
 	UPROPERTY(VisibleDefaultsOnly, BlueprintReadOnly, Category = "Weapons")
 	FName WeaponAttachSocketName;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Player")
+	bool bIsAlive;
 
 public:
 	// Sets default values for this character's properties
@@ -65,6 +72,10 @@ protected:
 	void StartFire();
 
 	void StopFire();
+
+	void Reload();
+
+	void OnHealthChanged(USHealthComponent* HealthComponent, float Health, float HealthDelta, const class UDamageType* DamageType, class AController* InstigatedBy, AActor* DamageCauser);
 
 public:
 	// Called every frame

@@ -58,6 +58,19 @@ protected:
 	FTimerHandle TimerHandle_TimeBetweenShots;
 
 	float LastFireTime;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon")
+	float MaxAmmo;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon")
+	float LowAmmo;
+
+	float Ammo;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon")
+	int MaxReloads;
+
+	int Reloads;
 	
 public:	
 
@@ -69,12 +82,22 @@ protected:
 
 	void PlayFireEffects(FVector TracerEndPoint);
 
+	UFUNCTION(BlueprintImplementableEvent)
+	void UpdateAmmoHUD(float AmmoCount, int ReloadCount);
+
+	UFUNCTION(BlueprintImplementableEvent)
+	void UpdateNotificationText(const FString& Text);
+
+	bool AmmoCheck();
+
 public:	
 	// Sets default values for this actor's properties
 	ASWeapon();
 
-	void StartFire();
+	virtual void StartFire();
 
-	void StopFire();
+	virtual void StopFire();
+
+	virtual void Reload();
 
 };

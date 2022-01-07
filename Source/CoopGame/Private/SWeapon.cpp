@@ -13,9 +13,9 @@
 /* Used to toggle whether debug shapes/lines should be shown in the game for weapons */
 static int32 DebugWeaponDrawing = 0;
 FAutoConsoleVariableRef CVARDebugWeaponDrawing(
-	TEXT("COOP.DebugWeapons"), 
-	DebugWeaponDrawing, 
-	TEXT("Draw Debug Lines for Weapons"), 
+	TEXT("COOP.DebugWeapons"),
+	DebugWeaponDrawing,
+	TEXT("Draw Debug Lines for Weapons"),
 	ECVF_Cheat);
 
 // Sets default values
@@ -30,14 +30,21 @@ ASWeapon::ASWeapon()
 	BaseDamage = 20.0f;
 
 	RateOfFire = 600.0f;
-
 	bIsAutomatic = true;
+
+	MaxAmmo = 40.0f;
+	LowAmmo = 5.0f;
+	MaxReloads = 5;
 }
 
 void ASWeapon::BeginPlay()
 {
 	Super::BeginPlay();
 	TimeBetweenShots = 60 / RateOfFire;
+
+	Ammo = MaxAmmo;
+	Reloads = MaxReloads;
+	UpdateAmmoHUD(Ammo, Reloads);
 }
 
 void ASWeapon::Fire()
@@ -47,7 +54,7 @@ void ASWeapon::Fire()
 
 	AActor* Player = GetOwner();
 
-	if (Player)
+	if (Player && Ammo > 0.0f)
 	{
 		FVector StartPoint;
 		FRotator Direction;
@@ -110,8 +117,11 @@ void ASWeapon::Fire()
 		PlayFireEffects(TracerEndPoint);
 
 		LastFireTime = GetWorld()->TimeSeconds;
+
+		Ammo--;
 	}
 
+	AmmoCheck();
 }
 
 void ASWeapon::StartFire()
@@ -126,6 +136,45 @@ void ASWeapon::StartFire()
 void ASWeapon::StopFire()
 {
 	GetWorldTimerManager().ClearTimer(TimerHandle_TimeBetweenShots);
+}
+
+bool ASWeapon::AmmoCheck()
+{
+	if (Ammo <= 0.0f && Reloads > 0)
+	{
+		Reload();
+		UpdateNotificationText("");
+	}
+	else if (Ammo <= 0.0f)
+	{
+		UpdateNotificationText("No Ammo");
+	}
+	else if (Ammo <= LowAmmo && Reloads > 0)
+	{
+		UpdateNotificationText("Press R to Reload");
+	}
+	else if (Ammo <= LowAmmo)
+	{
+		UpdateNotificationText("Low Ammo");
+	}
+	else
+	{
+		UpdateNotificationText("");
+	}
+	UpdateAmmoHUD(Ammo, Reloads);
+
+	return Ammo > 0.0f;
+}
+
+void ASWeapon::Reload()
+{
+	if (Reloads > 0)
+	{
+		Ammo = MaxAmmo;
+		Reloads--;
+		AmmoCheck();
+		return;
+	}
 }
 
 void ASWeapon::PlayFireEffects(FVector TracerEndPoint)

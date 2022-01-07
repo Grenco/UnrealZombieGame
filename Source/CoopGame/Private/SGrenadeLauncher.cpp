@@ -9,7 +9,7 @@ void ASGrenadeLauncher::Fire()
 {
 	AActor* Player = GetOwner();
 
-	if (Player && ProjectileClass)
+	if (Player && ProjectileClass && Ammo > 0)
 	{
 		FVector EyeLocation;
 		FRotator EyeRotation;
@@ -30,5 +30,9 @@ void ASGrenadeLauncher::Fire()
 		}
 
 		GetWorld()->SpawnActor<ASProjectile>(ProjectileClass, MuzzleLocation, EyeRotation, SpawnParams);
+
+		Ammo--;
 	}
+
+	AmmoCheck();
 }
