@@ -61,7 +61,7 @@ void ASRayGun::Fire()
 			UGameplayStatics::ApplyPointDamage(HitActor, Damage, ShotDirection, Hit, Player->GetInstigatorController(), this, DamageType);
 		}
 
-		if (TracerComp)
+		if (TracerComp && TracerComp->IsActive())
 		{
 			FVector MuzzleLocation = MeshComp->GetSocketLocation(MuzzleSocketName);
 			TracerComp->SetWorldLocationAndRotation(MuzzleLocation, Direction);
@@ -71,6 +71,7 @@ void ASRayGun::Fire()
 		{
 			FVector MuzzleLocation = MeshComp->GetSocketLocation(MuzzleSocketName);
 			TracerComp = UGameplayStatics::SpawnEmitterAtLocation(GetWorld(), TracerEffect, MuzzleLocation);
+			TracerComp->SetVectorParameter(TracerTargetName, TracerEndPoint);
 		}
 	}
 }

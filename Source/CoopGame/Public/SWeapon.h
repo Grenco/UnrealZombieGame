@@ -10,6 +10,20 @@ class USkeletalMeshComponent;
 class UDamageType;
 class UParticleSystem;
 
+USTRUCT()
+// Contains information of a single hitscan weapon linetrace
+struct FHitScanTrace
+{
+	GENERATED_BODY()
+
+public:
+	UPROPERTY()
+		TEnumAsByte<EPhysicalSurface> SurfaceType;
+
+	UPROPERTY()
+		FVector_NetQuantize TraceTo;
+};
+
 UCLASS()
 class COOPGAME_API ASWeapon : public AActor
 {
@@ -17,41 +31,48 @@ class COOPGAME_API ASWeapon : public AActor
 
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
-	USkeletalMeshComponent* MeshComp;
+		USkeletalMeshComponent* MeshComp;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon")
-	TSubclassOf<UDamageType> DamageType;
+		TSubclassOf<UDamageType> DamageType;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
-	float BaseDamage;
+		float BaseDamage;
+
+	UPROPERTY(BlueprintReadWrite, Category = "Weapon")
+		float DamageBoost;
 
 	UPROPERTY(VisibleDefaultsOnly, BlueprintReadOnly, Category = "Weapon")
-	FName MuzzleSocketName;
+		FName MuzzleSocketName;
 
 	UPROPERTY(VisibleDefaultsOnly, BlueprintReadOnly, Category = "Weapon")
-	FName TracerTargetName;
+		FName TracerTargetName;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effects")
-	UParticleSystem* MuzzleEffect;
+		UParticleSystem* MuzzleEffect;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effects")
-	UParticleSystem* DefaultImpactEffect;
+		UParticleSystem* DefaultImpactEffect;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effects")
-	UParticleSystem* FleshImpactEffect;
+		UParticleSystem* FleshImpactEffect;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effects")
-	UParticleSystem* TracerEffect;
+		UParticleSystem* TracerEffect;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Effects")
-	TSubclassOf<UCameraShakeBase> FireCameraShake;
+		TSubclassOf<UCameraShakeBase> FireCameraShake;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
-	bool bIsAutomatic;
+		bool bIsAutomatic;
 
 	/* Shots per minute */
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
-	float RateOfFire;
+		float RateOfFire;
+
+	/* Half-angle of bullet spread (degrees) */
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon", meta = (ClampMin = 0.0f))
+		float BulletSpread;
 
 	float TimeBetweenShots;
 
@@ -60,19 +81,24 @@ protected:
 	float LastFireTime;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon")
-	float MaxAmmo;
+		float MaxAmmo;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon")
-	float LowAmmo;
+		float LowAmmo;
 
-	float Ammo;
+	UPROPERTY(ReplicatedUsing = OnRep_Ammo)
+		float Ammo;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon")
-	int MaxReloads;
+		int MaxReloads;
 
-	int Reloads;
-	
-public:	
+	UPROPERTY(ReplicatedUsing = OnRep_Reloads)
+		int Reloads;
+
+	UPROPERTY(ReplicatedUsing = OnRep_HitScanTrace)
+		FHitScanTrace HitScanTrace;
+
+public:
 
 protected:
 
@@ -80,17 +106,42 @@ protected:
 
 	virtual void Fire();
 
+	UFUNCTION(Server, Reliable, WithValidation)
+		void ServerFire();
+
+	UFUNCTION(Server, Reliable, WithValidation)
+		void ServerReload();
+
+	UFUNCTION(Server, Reliable, WithValidation)
+		void ServerAddReloads(int Amount);
+
 	void PlayFireEffects(FVector TracerEndPoint);
 
-	UFUNCTION(BlueprintImplementableEvent)
-	void UpdateAmmoHUD(float AmmoCount, int ReloadCount);
+	void PlayImpactEffects(EPhysicalSurface SurfaceType, FVector ImpactPoint);
 
 	UFUNCTION(BlueprintImplementableEvent)
-	void UpdateNotificationText(const FString& Text);
+		void CreateWeaponUI();
+
+	UFUNCTION(BlueprintImplementableEvent)
+		void UpdateAmmoHUD(float AmmoCount, int ReloadCount);
+
+	UFUNCTION(BlueprintImplementableEvent)
+		void UpdateNotificationText(const FString& Text);
+
+	UFUNCTION()
+		void OnRep_HitScanTrace();
+
+	UFUNCTION()
+		void OnRep_Ammo();
+
+	UFUNCTION()
+		void OnRep_Reloads();
 
 	bool AmmoCheck();
 
-public:	
+	void UseAmmo(float Amount = 1.0f);
+
+public:
 	// Sets default values for this actor's properties
 	ASWeapon();
 
@@ -100,4 +151,9 @@ public:
 
 	virtual void Reload();
 
+	virtual void SetOwner(AActor* NewOwner) override;
+
+	// Add reloads to the weapon, default value fully reloads
+	UFUNCTION(BlueprintCallable, Category = "Weapon")
+		void AddReloads(int Amount = 0);
 };

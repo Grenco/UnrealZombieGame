@@ -9,6 +9,8 @@
 #include "Components/SHealthComponent.h"
 #include "SWeapon.h"
 #include "CoopGame/CoopGame.h"
+#include "Net/UnrealNetwork.h"
+#include "GameFramework/CharacterMovementComponent.h"
 
 // Sets default values
 ASCharacter::ASCharacter()
@@ -24,7 +26,6 @@ ASCharacter::ASCharacter()
 	CameraComp->SetupAttachment(SpringArmComp);
 
 	HealthComp = CreateDefaultSubobject<USHealthComponent>(TEXT("HealthComp"));
-	HealthComp->OnHealthChanged.AddDynamic(this, &ASCharacter::OnHealthChanged);
 
 	GetCapsuleComponent()->SetCollisionResponseToChannel(COLLISION_WEAPON, ECR_Ignore);
 
@@ -34,6 +35,8 @@ ASCharacter::ASCharacter()
 	ZoomedFOV = 40.0f;
 	ZoomInterpSpeed = 20.0f;
 
+	bIsAlive = true;
+
 	WeaponAttachSocketName = "WeaponSocket";
 }
 
@@ -41,21 +44,26 @@ ASCharacter::ASCharacter()
 void ASCharacter::BeginPlay()
 {
 	Super::BeginPlay();
+
+	bIsAlive = true;
 	
 	DefaultFOV = CameraComp->FieldOfView;
 
-	// Spawn default weapon
-	FActorSpawnParameters SpawnParams;
-	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-
-	CurrentWeapon = GetWorld()->SpawnActor<ASWeapon>(StartingWeaponClass, FVector::ZeroVector, FRotator::ZeroRotator);
-	if (CurrentWeapon)
+	if (HasAuthority())
 	{
-		CurrentWeapon->SetOwner(this);
-		CurrentWeapon->AttachToComponent(GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, WeaponAttachSocketName);
-	}
+		// Spawn default weapon
+		FActorSpawnParameters SpawnParams;
+		SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
-	bIsAlive = true;
+		CurrentWeapon = GetWorld()->SpawnActor<ASWeapon>(StartingWeaponClass, FVector::ZeroVector, FRotator::ZeroRotator);
+		if (CurrentWeapon)
+		{
+			CurrentWeapon->SetOwner(this);
+			CurrentWeapon->AttachToComponent(GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, WeaponAttachSocketName);
+		}
+	}
+		
+	HealthComp->OnHealthChanged.AddDynamic(this, &ASCharacter::OnHealthChanged);
 }
 
 void ASCharacter::MoveForward(float Value)
@@ -70,7 +78,10 @@ void ASCharacter::MoveRight(float Value)
 
 void ASCharacter::BeginCrouch()
 {
-	Crouch();
+	if (GetCharacterMovement()->IsMovingOnGround())
+	{
+		Crouch();
+	}
 }
 
 void ASCharacter::EndCrouch()
@@ -112,15 +123,22 @@ void ASCharacter::Reload()
 	}
 }
 
-void ASCharacter::OnHealthChanged(USHealthComponent* HealthComponent, float Health, float HealthDelta, 
+void ASCharacter::OnHealthChanged(USHealthComponent* HealthComponent, float Health, float HealthDelta,
 	const class UDamageType* DamageType, class AController* InstigatedBy, AActor* DamageCauser)
 {
 	if (Health <= 0.0f && bIsAlive)
 	{
 		// Die
 		bIsAlive = false;
+
+		StopFire();
+
 		GetMovementComponent()->StopMovementImmediately();
 		GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+		DetachFromControllerPendingDestroy();
+
+		SetLifeSpan(10.0f);
 	}
 }
 
@@ -168,3 +186,10 @@ FVector ASCharacter::GetPawnViewLocation() const
 	return Super::GetPawnViewLocation();
 }
 
+void ASCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	DOREPLIFETIME(ASCharacter, CurrentWeapon);
+	DOREPLIFETIME(ASCharacter, bIsAlive);
+}

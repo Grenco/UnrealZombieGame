@@ -41,12 +41,13 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Weapons")
 	TSubclassOf<ASWeapon> StartingWeaponClass;
 
+	UPROPERTY(Replicated, BlueprintReadOnly)
 	ASWeapon* CurrentWeapon;
 
 	UPROPERTY(VisibleDefaultsOnly, BlueprintReadOnly, Category = "Weapons")
 	FName WeaponAttachSocketName;
 
-	UPROPERTY(BlueprintReadOnly, Category = "Player")
+	UPROPERTY(Replicated, BlueprintReadOnly, Category = "Player")
 	bool bIsAlive;
 
 public:
@@ -66,15 +67,12 @@ protected:
 	void EndCrouch();
 
 	void BeginZoom();
-
+	
 	void EndZoom();
-
-	void StartFire();
-
-	void StopFire();
 
 	void Reload();
 
+	UFUNCTION()
 	void OnHealthChanged(USHealthComponent* HealthComponent, float Health, float HealthDelta, const class UDamageType* DamageType, class AController* InstigatedBy, AActor* DamageCauser);
 
 public:
@@ -85,5 +83,11 @@ public:
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
 	virtual FVector GetPawnViewLocation() const override;
+
+	UFUNCTION(BlueprintCallable, Category = "Player")
+	void StartFire();
+
+	UFUNCTION(BlueprintCallable, Category = "Player")
+	void StopFire();
 
 };

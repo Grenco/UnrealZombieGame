@@ -9,6 +9,7 @@
 #include "PhysicalMaterials/PhysicalMaterial.h"
 #include "CoopGame/CoopGame.h"
 #include "TimerManager.h"
+#include "Net/UnrealNetwork.h"
 
 /* Used to toggle whether debug shapes/lines should be shown in the game for weapons */
 static int32 DebugWeaponDrawing = 0;
@@ -28,13 +29,47 @@ ASWeapon::ASWeapon()
 	TracerTargetName = "BeamEnd";
 
 	BaseDamage = 20.0f;
+	DamageBoost = 0.0f;
 
 	RateOfFire = 600.0f;
 	bIsAutomatic = true;
+	BulletSpread = 2.0f;
 
 	MaxAmmo = 40.0f;
 	LowAmmo = 5.0f;
 	MaxReloads = 5;
+
+	SetReplicates(true);
+
+	NetUpdateFrequency = 66.0f;
+	MinNetUpdateFrequency = 33.0f;
+}
+
+void ASWeapon::SetOwner(AActor* NewOwner)
+{
+	Super::SetOwner(NewOwner);
+
+	CreateWeaponUI();
+	AmmoCheck();
+}
+
+void ASWeapon::AddReloads(int Amount)
+{
+	if (!HasAuthority())
+	{
+		ServerAddReloads(Amount);
+		return;
+	}
+
+	if (Amount == 0)
+	{
+		Reloads = MaxReloads;
+		OnRep_Reloads();
+		return;
+	}
+
+	Reloads = FMath::Min(Reloads + Amount, MaxReloads);
+	OnRep_Reloads();
 }
 
 void ASWeapon::BeginPlay()
@@ -44,11 +79,36 @@ void ASWeapon::BeginPlay()
 
 	Ammo = MaxAmmo;
 	Reloads = MaxReloads;
-	UpdateAmmoHUD(Ammo, Reloads);
+}
+
+void ASWeapon::ServerFire_Implementation()
+{
+	Fire();
+}
+
+bool ASWeapon::ServerFire_Validate()
+{
+	return true;
+}
+
+void ASWeapon::ServerReload_Implementation()
+{
+	Reload();
+}
+
+bool ASWeapon::ServerReload_Validate()
+{
+	return true;
 }
 
 void ASWeapon::Fire()
 {
+	if (!HasAuthority())
+	{
+		ServerFire();
+		//return;
+	}
+
 	// Trace the world, from pawn eyes to crosshair location
 	FHitResult Hit;
 
@@ -62,6 +122,10 @@ void ASWeapon::Fire()
 
 		FVector ShotDirection = Direction.Vector();
 
+		// Add bullet spread
+		float HalfRad = FMath::DegreesToRadians(BulletSpread);
+		ShotDirection = FMath::VRandCone(ShotDirection, HalfRad, HalfRad);
+
 		FVector EndPoint = StartPoint + (ShotDirection * 10000);
 
 		FCollisionQueryParams QueryParams;
@@ -71,6 +135,7 @@ void ASWeapon::Fire()
 		QueryParams.bReturnPhysicalMaterial = true;
 
 		FVector TracerEndPoint = EndPoint; // Particle target parameter
+		EPhysicalSurface HitSurface = SurfaceType_Default;
 
 		if (GetWorld()->LineTraceSingleByChannel(Hit, StartPoint, EndPoint, COLLISION_WEAPON, QueryParams))
 		{
@@ -79,7 +144,7 @@ void ASWeapon::Fire()
 
 			TracerEndPoint = Hit.ImpactPoint;
 
-			EPhysicalSurface HitSurface = UPhysicalMaterial::DetermineSurfaceType(Hit.PhysMaterial.Get());
+			HitSurface = UPhysicalMaterial::DetermineSurfaceType(Hit.PhysMaterial.Get());
 
 			// Set the damage based on what was hit
 			float ActualDamage = BaseDamage;
@@ -87,26 +152,12 @@ void ASWeapon::Fire()
 			{
 				ActualDamage *= 5.0f;
 			}
-			UGameplayStatics::ApplyPointDamage(HitActor, ActualDamage, ShotDirection, Hit, Player->GetInstigatorController(), this, DamageType);
 
-			// Play a hit effect based on what was hit
-			UParticleSystem* SelectedEffect = nullptr;
-			switch (HitSurface)
-			{
-			case SURFACE_FLESHDEFAULT:
-			case SURFACE_FLESHVULNERABLE:
-				SelectedEffect = FleshImpactEffect;
-				break;
-			default:
-				SelectedEffect = DefaultImpactEffect;
-				break;
-			}
+			ActualDamage += BaseDamage * DamageBoost;
 
-			if (SelectedEffect)
-			{
-				UGameplayStatics::SpawnEmitterAtLocation(GetWorld(), SelectedEffect, TracerEndPoint, Hit.ImpactNormal.Rotation());
-			}
+			UGameplayStatics::ApplyPointDamage(HitActor, ActualDamage, ShotDirection, Hit, Player->GetInstigatorController(), Player, DamageType);
 
+			PlayImpactEffects(HitSurface, TracerEndPoint);
 		}
 
 		if (DebugWeaponDrawing > 0)
@@ -116,12 +167,16 @@ void ASWeapon::Fire()
 
 		PlayFireEffects(TracerEndPoint);
 
+		if (HasAuthority())
+		{
+			HitScanTrace.TraceTo = TracerEndPoint;
+			HitScanTrace.SurfaceType = HitSurface;
+		}
+
 		LastFireTime = GetWorld()->TimeSeconds;
 
-		Ammo--;
+		UseAmmo();
 	}
-
-	AmmoCheck();
 }
 
 void ASWeapon::StartFire()
@@ -140,20 +195,24 @@ void ASWeapon::StopFire()
 
 bool ASWeapon::AmmoCheck()
 {
-	if (Ammo <= 0.0f && Reloads > 0)
+	bool bHasAmmo = Ammo > 0.0f;
+	bool bCanReload = Reloads > 0;
+	bool bLowAmmo = Ammo <= LowAmmo;
+
+	if (!bHasAmmo && bCanReload)
 	{
 		Reload();
 		UpdateNotificationText("");
 	}
-	else if (Ammo <= 0.0f)
+	else if (!bHasAmmo)
 	{
 		UpdateNotificationText("No Ammo");
 	}
-	else if (Ammo <= LowAmmo && Reloads > 0)
+	else if (bLowAmmo && bCanReload)
 	{
 		UpdateNotificationText("Press R to Reload");
 	}
-	else if (Ammo <= LowAmmo)
+	else if (bLowAmmo)
 	{
 		UpdateNotificationText("Low Ammo");
 	}
@@ -163,18 +222,42 @@ bool ASWeapon::AmmoCheck()
 	}
 	UpdateAmmoHUD(Ammo, Reloads);
 
-	return Ammo > 0.0f;
+	return bHasAmmo;
+}
+
+void ASWeapon::UseAmmo(float Amount)
+{
+	if (HasAuthority())
+	{
+		Ammo -= Amount;
+		AmmoCheck(); // This shouldn't really be called here, but it doesn't call from the OnRep function for the listen server when ammo gets updated, just clients
+	}
 }
 
 void ASWeapon::Reload()
 {
+	if (!HasAuthority())
+	{
+		ServerReload();
+		return;
+	}
+
 	if (Reloads > 0)
 	{
 		Ammo = MaxAmmo;
 		Reloads--;
-		AmmoCheck();
-		return;
+		AmmoCheck(); // This shouldn't really be called here, but it doesn't call from the OnRep function for the listen server when ammo gets updated, just clients
 	}
+}
+
+void ASWeapon::ServerAddReloads_Implementation(int Amount)
+{
+	AddReloads(Amount);
+}
+
+bool ASWeapon::ServerAddReloads_Validate(int Amount)
+{
+	return true;
 }
 
 void ASWeapon::PlayFireEffects(FVector TracerEndPoint)
@@ -205,3 +288,53 @@ void ASWeapon::PlayFireEffects(FVector TracerEndPoint)
 	}
 }
 
+void ASWeapon::PlayImpactEffects(EPhysicalSurface SurfaceType, FVector ImpactPoint)
+{
+	// Play a hit effect based on what was hit
+	UParticleSystem* SelectedEffect = nullptr;
+	switch (SurfaceType)
+	{
+	case SURFACE_FLESHDEFAULT:
+	case SURFACE_FLESHVULNERABLE:
+		SelectedEffect = FleshImpactEffect;
+		break;
+	default:
+		SelectedEffect = DefaultImpactEffect;
+		break;
+	}
+
+	if (SelectedEffect)
+	{
+		FVector MuzzleLocation = MeshComp->GetSocketLocation(MuzzleSocketName);
+		FVector ShotDirection = ImpactPoint - MuzzleLocation;
+		ShotDirection.Normalize();
+		UGameplayStatics::SpawnEmitterAtLocation(GetWorld(), SelectedEffect, ImpactPoint, ShotDirection.Rotation());
+	}
+}
+
+void ASWeapon::OnRep_HitScanTrace()
+{
+	// Play cosmetic FX
+	PlayFireEffects(HitScanTrace.TraceTo);
+
+	PlayImpactEffects(HitScanTrace.SurfaceType, HitScanTrace.TraceTo);
+}
+
+void ASWeapon::OnRep_Ammo()
+{
+	AmmoCheck();
+}
+
+void ASWeapon::OnRep_Reloads()
+{
+	AmmoCheck();
+}
+
+void ASWeapon::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	DOREPLIFETIME_CONDITION(ASWeapon, Ammo, COND_OwnerOnly);
+	DOREPLIFETIME_CONDITION(ASWeapon, Reloads, COND_OwnerOnly);
+	DOREPLIFETIME_CONDITION(ASWeapon, HitScanTrace, COND_SkipOwner);
+}
