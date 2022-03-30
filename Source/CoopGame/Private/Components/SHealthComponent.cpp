@@ -13,7 +13,7 @@ USHealthComponent::USHealthComponent()
 
 	TeamNum = 255;
 
-	SetIsReplicated(true);
+	//SetIsReplicated(true);
 }
 
 // Called when the game starts
